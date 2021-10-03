@@ -185,7 +185,6 @@ LEVELS.forEach(function(level){
 function setBoard(newBoard) {
 	board = cloneBoard(newBoard);
 	undoStack = [];
-	console.log("set board to: ", board); //DEBUG
 }
 
 let maxLevel = 0;
