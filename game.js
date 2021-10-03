@@ -67,20 +67,22 @@ let board = {
 				//... for animation ...
 			],
 			//actions from player:
-			//pull:{x,y} (new pts[pts.length-1])
-			//hold:{x,y} (trying to step to location; doesn't move)
+			//pulled:true
+			//held:true
 
 			//next actions might include:
 			//next:{x,y} (new pts[0])
 			//prev:{x,y} (new pts[pts.length-1])
-			//barking:true //barking at 'next'
+			//barking:{i:, of:} //barking at 'next'
 			//biting:true //biting a tail at 'next'
-			//bitten:true //some sable is biting this one
+			//bitten:[ ... ] //list of biters
 		},
 	],
 	//for drawing:
 	tween:1.0, //how far from [from .. pts] to draw sables
 };
+
+let loop = 0.0;
 
 let picture = null;
 let isEnd = false;
@@ -91,25 +93,170 @@ let undoStack = [];
 //Tail: ['🡐', '🡗', '🡖', '🡒', '🡕', '🡔']
 
 const LEVELS = [
-	{ title:"test", board:[
+	/*{ title:"test", board:[
 		"@ @ 🡗 @ @ _ @",
 		" . ⇨ ⇨ o # _ X X X X X X",
 		"@ @ @ @ @ @ @",
+	]},*/
+	{ title:"get sables to the exit", board:[
+		"@ @ @ @ @ @ @",
+		" @ 🡗 🡐 @ . . @",
+		"@ ⬂ @ @ . @ X",
+		" @ ⇨ o . @ @ ",
+		"@ @ @ @ @ @ @",
 	]},
-	{ title:"sable turn left", board:[
-		"    X . . . . . X X X",
-		"   X . . # @ . . X X ",
-		"  X . @ . _ . . . X X",
-		" X . . . . . . @ . X ",
-		"X . . 🡖 . . . . . . X",
-		" X . @ 🡖 . . . . . X ",
-		"  X . . ⇨ ⇨ o @ . X X",
-		"   X . . @ . . . X X ",
-		"    X . . . . . X X X",
+	{ title:"move rocks to clear the path", board:[
+		"@ @ @ @ @ @ @",
+		" @ o . # . X ",
+		"@ ⬀ @ @ _ @ @",
+		" @ ⬁ @ @ @ @ ",
+		"@ @ 🡔 🡐 @ @ @",
+		" @ @ @ @ @ @ ",
+	]},
+	{ title:"sables turn at obstacles", board:[
+		"@ @ @ @ @ @ @",
+		" @ @ 🡗 . @ @ @",
+		"@ @ 🡗 . _ # @",
+		" @ ⬂ . . _ _ @",
+		"@ @ ⇨ o . # @",
+		" @ @ @ . . . @",
+		"@ @ X . . . @",
+		" @ @ @ @ @ @ @",
+	]},
+	{ title:"you can pull tails", board:[
+		"@ @ @ @ @ @ @ @ @ ",
+		" @ @ @ @ @ @ @ @ @",
+		"@ @ @ @ @ . @ @ @ ",
+		" @ @ @ @ @ o . @ @",
+		"@ . 🡒 🡒 ⇨ ⬀ . X @ ",
+		" @ @ @ @ @ @ @ @ @",
+	]},
+	{ title:"sables bite", board:[
+		"@ @ @ @ @ @ @ @ @ @ @ ",
+		" @ @ @ @ @ @ @ X @ @ @",
+		"@ @ @ @ @ @ @ . @ @ @ ",
+		" @ . 🡒 🡖 @ @ . @ @ @ @",
+		"@ @ . . ⬂ @ @ . @ @ @ ",
+		" @ @ . @ ⇨ o o @ @ @ @",
+		"@ @ @ . @ @ ⬀ @ @ @ @ ",
+		" @ @ @ 🡒 🡒 ⬀ @ @ @ @ @",
+		"@ @ @ @ @ @ @ @ @ @ @ ",
+	]},
+	{ title:"sables argue", board:[
+		"@ @ @ @ @ @ @ @ @ @ @ ",
+		" @ @ @ @ @ @ @ @ @ @ @",
+		"@ @ @ @ 🡖 @ @ @ @ @ @ ",
+		" @ @ @ @ 🡗 @ @ @ @ @ @",
+		"@ @ @ @ ⬂ @ @ @ ⬃ ⇦ @ ",
+		" @ @ @ @ ⇨ o @ o @ 🡔 @",
+		"@ @ @ @ @ @ . . @ 🡕 @ ",
+		" @ @ @ @ X @ . @ @ . @",
+		"@ @ @ @ @ . . @ @ . @ ",
+		" @ @ @ @ @ @ @ @ @ @ @",
+	]},
+
+
+
+	{ title:"multiple bounces", board:[
+	    "",
+		"     @ @ @ @ @ @     ",
+		"    @ . . . . . @    ",
+		"   @ . . _ # . . @   ",
+		"  @ . @ . _ . . . @  ",
+		" @ . . . . . . @ . @ ",
+		"@ . . 🡖 . . . . . . @",
+		" @ . @ 🡖 . . . . . @ ",
+		"  @ . . ⇨ ⇨ o # _ @  ",
+		"   X . _ # . . _ @   ",
+		"    @ . _ . . . @    ",
+		"     @ @ @ @ @ @     "
 	]},
 ];
 
-board = makeBoard(LEVELS[1].board);
+LEVELS.forEach(function(level){
+	if (level.picture) return;
+	console.log(level.title);
+	level.board = makeBoard(level.board);
+});
+
+function setBoard(newBoard) {
+	board = cloneBoard(newBoard);
+	undoStack = [];
+	console.log("set board to: ", board); //DEBUG
+}
+
+let maxLevel = 0;
+let currentLevel;
+
+function setLevel(idx) {
+	if (currentLevel !== idx) {
+		if (history && history.replaceState) history.replaceState({},"","?" + idx);
+	}
+	currentLevel = idx;
+	maxLevel = Math.max(maxLevel, currentLevel);
+	if (LEVELS[currentLevel].picture) {
+		picture = LEVELS[currentLevel].picture;
+		board = null;
+		isEnd = (LEVELS[currentLevel].isEnd ? true : false);
+	} else {
+		picture = null;
+		setBoard(LEVELS[currentLevel].board);
+		isEnd = false;
+	}
+}
+
+if (document.location.search.match(/^\?\d+/)) {
+	setLevel(parseInt(document.location.search.substr(1)));
+} else {
+	setLevel(0);
+}
+
+function next() {
+	if (isWon() || currentLevel < maxLevel) {
+		setLevel(currentLevel + 1);
+	}
+}
+
+function prev() {
+	if (currentLevel > 0) {
+		setLevel(currentLevel - 1);
+	}
+}
+
+function cloneBoard(b) {
+	function cloneObjArray(arr) {
+		let ret = [];
+		arr.forEach(function(obj){
+			let clone = {};
+			for (var name in obj) {
+				clone[name] = obj[name];
+			}
+			ret.push(clone);
+		});
+		return ret;
+	}
+	let clone = {
+		size:{x:b.size.x, y:b.size.y},
+		ground:b.ground,
+		rockArea:b.rockArea,
+		bounds:b.bounds,
+		offset:b.offset,
+		rocks:cloneObjArray(b.rocks),
+		sables:cloneObjArray(b.sables),
+		tween:1.0,
+	};
+	//clear controls:
+	for (let rock of clone.rocks) {
+		delete rock.shove;
+	}
+	for (let sable of clone.sables) {
+		delete sable.held;
+		delete sable.pulled;
+	}
+	setBehaviors(clone);
+	return clone;
+}
+
 
 function makeBoard(map_) {
 	//flip map_ over to save on indexing hassle:
@@ -320,60 +467,6 @@ function stepDir(a, dir) {
 }
 
 
-/*
-LEVELS.forEach(function(level){
-	if (level.picture) return;
-	console.log(level.title);
-	level.board = makeBoard(level.board, level.layers, level.library);
-});
-*/
-
-/*
-function setBoard(newBoard) {
-	board = cloneBoard(newBoard);
-	undoStack = [];
-}
-*/
-
-/*
-let maxLevel = 0;
-let currentLevel;
-
-function setLevel(idx) {
-	if (currentLevel !== idx) {
-		if (history && history.replaceState) history.replaceState({},"","?" + idx);
-	}
-	currentLevel = idx;
-	maxLevel = Math.max(maxLevel, currentLevel);
-	if (LEVELS[currentLevel].picture) {
-		picture = LEVELS[currentLevel].picture;
-		board = null;
-		isEnd = (LEVELS[currentLevel].isEnd ? true : false);
-	} else {
-		picture = null;
-		setBoard(LEVELS[currentLevel].board);
-		isEnd = false;
-	}
-}
-
-if (document.location.search.match(/^\?\d+/)) {
-	setLevel(parseInt(document.location.search.substr(1)));
-} else {
-	setLevel(0);
-}
-
-function next() {
-	if (isWon()) {
-		setLevel(currentLevel + 1);
-		if (currentLevel + 1 === LEVELS.length) {
-			AUDIO.winGame.oneshot();
-		} else {
-			AUDIO.click.oneshot();
-		}
-	}
-}
-*/
-
 function lerp(a,b,amt) {
 	return {
 		x:amt*(b.x-a.x)+a.x,
@@ -523,7 +616,6 @@ function draw() {
 					const upRight = stepDir({x:col, y:row}, 1);
 					if (upRight.x >= 0 && upRight.x <= board.size.x && board.rockArea[upRight.y][upRight.x]) {
 						const px = pixelPos(upRight.x, upRight.y);
-						if (DEBUG_draw) console.log("--> ", px);
 						drawSprite(0.5*(x+px.x),0.5*(y+px.y), SPRITES.rockDiag);
 					}
 				}
@@ -532,6 +624,7 @@ function draw() {
 		}
 
 		//shines:
+		const exits = {}; //any exit which is shining will get drawn over!
 		for (let row = 0; row < board.size.y; ++row) {
 			for (let col = 0; col < board.size.x; ++col) {
 				if (board.ground[row][col] === SPRITES.HEXES.exit) continue;
@@ -539,7 +632,8 @@ function draw() {
 				//only filled ground which isn't an exit
 				for (let dir = 0; dir < 6; ++dir) {
 					const n = stepDir({x:col, y:row}, dir);
-					if (isExit(n.x, n.y)) {
+					if (isExit(board,n.x, n.y)) {
+						exits[`${n.x},${n.y}`] = n;
 						let {x,y} = pixelPos(col, row);
 						//draw shine!
 						if      (dir == 0) drawSpriteD(SPRITES.shine, x,y, 1,0, 0,1);
@@ -552,13 +646,14 @@ function draw() {
 				}
 			}
 		}
-
+	
 		//helpful outlines:
-		for (let y = 0; y < board.size.y; ++y) {
-			for (let x = 0; x < board.size.x; ++x) {
-				let {x:px,y:py} = pixelPos(x, y);
-
-				drawSprite(px,py, SPRITES.HEXES.outlineUL);
+		for (let row = 0; row < board.size.y; ++row) {
+			for (let col = 0; col < board.size.x; ++col) {
+				if (board.ground[row][col] === SPRITES.HEXES.exit) continue;
+				if (board.ground[row][col] === null) continue;
+				let {x,y} = pixelPos(col, row);
+				drawSprite(x,y, SPRITES.HEXES.outline);
 			}
 		}
 
@@ -572,70 +667,57 @@ function draw() {
 		for (let sable of board.sables) {
 			if (sable.remain === 0) continue; //don't draw if entirely gone
 
+			//TODO: do drawing loop in one pass and handle animation (and extra neck) into the mix because, um, why not?
+
 			let pts = [];
-			function addPoint(at, sprite, S) {
+			function addPoint(at, sprite, A, S) {
 				if (typeof(S) === 'undefined') S = 1.0;
-				pts.push({x:at.x, y:at.y, sprite:sprite, S});
+				pts.push({x:at.x, y:at.y, sprite:sprite, A, S});
 			}
 			for (let i = 0; i < sable.pts.length; ++i) {
 				const at = pixelPos(sable.pts[i].x, sable.pts[i].y);
+				const A = (sable.pts[i].exited ? 0.0 : 1.0);
 				if (i === 0) {
-					addPoint(at, SPRITES.head);
+					if (sable.barking && sable.next) {
+						const n = pixelPos(sable.next.x, sable.next.y);
+						let amt = loop * sable.barking.of - sable.barking.i;
+						if (amt > 0.0 && amt < 0.9) {
+							drawSprite(n.x, n.y, SPRITES.bark);
+							addPoint(at, SPRITES.headBark, A);
+						} else {
+							addPoint(at, SPRITES.head, A);
+						}
+					} else if (sable.biting && sable.next) {
+						const n = pixelPos(sable.next.x, sable.next.y);
+						addPoint(at, SPRITES.headBite, A);
+					} else {
+						addPoint(at, SPRITES.head, A);
+					}
 				} else if (i <= sable.bodyLength) {
 					const b = i - 1;
-					addPoint(lerp(at, pts[pts.length-1], 0.5), SPRITES.body, (b === 0 ? 0.7 : 1.0));
-					addPoint(at, SPRITES.body);
+					addPoint(lerp(at, pts[pts.length-1], 0.5), SPRITES.body, A, (b === 0 ? 0.7 : 1.0));
+					addPoint(at, SPRITES.body, A);
 				} else {
 					const t = i - 1 - sable.bodyLength;
-					addPoint(lerp(at, pts[pts.length-1], 0.5), SPRITES.tail, (t === 0 ? 0.7 : 1.0));
-					addPoint(at, SPRITES.tail);
+					addPoint(lerp(at, pts[pts.length-1], 0.5), SPRITES.tail, A, (t === 0 ? 0.7 : 1.0));
+					addPoint(at, SPRITES.tail, A);
 				}
 			}
-
-			/*
-
-			if (sable.step) {
-				const next = pixelPos(sable.step.x, sable.step.y);
-				pts.unshift(lerp(pts[0], next, 0.5));
-				pts.unshift(next);
-				for (let i = pts.length-1; i >= 2; --i) {
-					let a = {x: pts[i].x, y:pts[i].y};
-					let b = {x: pts[i-1].x, y:pts[i-1].y};
-					let c = {x: pts[i-2].x, y:pts[i-2].y};
-					pts[i].x = step*step * c.x + 2.0*(1-step)*step * b.x + (1-step)*(1-step) * a.x;
-					pts[i].y = step*step * c.y + 2.0*(1-step)*step * b.y + (1-step)*(1-step) * a.y;
-				}
-				pts.shift();
-				pts.shift();
-			} else if (sable.wouldStep) {
-				const next = pixelPos(sable.wouldStep.x, sable.wouldStep.y);
-				pts.unshift(lerp(pts[0], next, 0.5));
-				pts.unshift(next);
-				let amt;
-				if (step < 0.4) {
-					amt = step / 0.4;
-				} else {
-					amt = 1.0 - (step - 0.4) / 0.6;
-				}
-				amt *= 0.1;
-				for (let i = pts.length-1; i >= 2; --i) {
-					let a = {x: pts[i].x, y:pts[i].y};
-					let b = {x: pts[i-1].x, y:pts[i-1].y};
-					let c = {x: pts[i-2].x, y:pts[i-2].y};
-					pts[i].x = amt*amt * c.x + 2.0*(1-amt)*amt * b.x + (1-amt)*(1-amt) * a.x;
-					pts[i].y = amt*amt * c.y + 2.0*(1-amt)*amt * b.y + (1-amt)*(1-amt) * a.y;
-				}
-				pts.shift();
-				pts.shift();
-			}
-			*/
 
 			for (let i = 0; i < pts.length; ++i) {
 				if (i == 0) {
-					pts[i].d = normalize({
-						x:pts[i].x - pts[i+1].x,
-						y:pts[i].y - pts[i+1].y
-					});
+					if (sable.next) {
+						const n = pixelPos(sable.next.x, sable.next.y);
+						pts[i].d = normalize({
+							x:n.x - pts[i].x,
+							y:n.y - pts[i].y
+						});
+					} else {
+						pts[i].d = normalize({
+							x:pts[i].x - pts[i+1].x,
+							y:pts[i].y - pts[i+1].y
+						});
+					}
 				} else if (i + 1 == pts.length) {
 					pts[i].d = normalize({
 						x:pts[i-1].x - pts[i].x,
@@ -649,11 +731,10 @@ function draw() {
 				}
 			}
 
-			//hides sable after exit:
-			//const begin = 2*(1 + sable.body.length + sable.tail.length)-1 - 2 * sable.remain;
-			const begin = 0;
-
 			function drawLegs(pt, Y) {
+				if (pt.A === 0.0) return;
+				ctx.globalAlpha = pt.A;
+
 				let ox = -pt.d.y;
 				let oy = pt.d.x;
 				const HX = 0;
@@ -667,7 +748,8 @@ function draw() {
 			}
 		
 			pts.forEach((pt,i) => {
-				if (i >= begin && pt.sprite.outline) {
+				if (pt.sprite.outline) {
+					ctx.globalAlpha = pt.A;
 					drawSpriteD(pt.sprite.outline, pt.x, pt.y, pt.S * pt.d.x, pt.S * pt.d.y);
 				}
 			});
@@ -676,11 +758,16 @@ function draw() {
 			drawLegs(pts[sable.bodyLength*2], 1);
 
 			for (let i = 1; i < pts.length; i += 2) {
+				if (pts[i].A === 0.0) continue;
+				ctx.globalAlpha = pts[i].A;
 				drawSpriteD(pts[i].sprite, pts[i].x, pts[i].y, pts[i].S * pts[i].d.x, pts[i].S * pts[i].d.y);
 			}
 			for (let i = pts.length-1; i >= 0; i -= 2) {
+				if (pts[i].A === 0.0) continue;
+				ctx.globalAlpha = pts[i].A;
 				drawSpriteD(pts[i].sprite, pts[i].x, pts[i].y, pts[i].S * pts[i].d.x, pts[i].S * pts[i].d.y);
 			}
+			ctx.globalAlpha = 1.0;
 			/*
 			pts.forEach((pt, idx) => {
 				if (idx === 0) return;
@@ -689,6 +776,47 @@ function draw() {
 			*/
 
 		}
+
+		//draw exits over sables:
+		for (let key of Object.values(exits)) {
+			let {x,y} = pixelPos(key.x, key.y);
+			drawSprite(x, y, SPRITES.HEXES.exit);
+		}
+
+		//draw actions:
+		if (mouse.action) {
+			if (mouse.action.shoved) {
+				const px = pixelPos(mouse.action.shoved.x, mouse.action.shoved.y);
+				const to = pixelPos(mouse.action.shoved.shoved.x, mouse.action.shoved.shoved.y);
+				const half = lerp(px, to, 0.7);
+				const dir = getDir(mouse.action.shoved, mouse.action.shoved.shoved);
+				drawSprite(px.x, px.y, SPRITES.cursorGrab);
+				if      (dir === 0) drawSpriteD(SPRITES.arrowHoriz, half.x,half.y, 1,0, 0,1);
+				else if (dir === 1) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, 1,0, 0,1);
+				else if (dir === 2) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, -1,0, 0,1);
+				else if (dir === 3) drawSpriteD(SPRITES.arrowHoriz, half.x,half.y,-1,0, 0,1);
+				else if (dir === 4) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, -1,0, 0,-1);
+				else if (dir === 5) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, 1,0, 0,-1);
+			}
+			if (mouse.action.pulled) {
+				const px = pixelPos(mouse.action.x, mouse.action.y);
+				const to = pixelPos(mouse.action.to.x, mouse.action.to.y);
+				const half = lerp(px, to, 0.7);
+				const dir = getDir(mouse.action, mouse.action.to);
+				drawSprite(px.x, px.y, SPRITES.cursorGrab);
+				if      (dir === 0) drawSpriteD(SPRITES.arrowHoriz, half.x,half.y, 1,0, 0,1);
+				else if (dir === 1) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, 1,0, 0,1);
+				else if (dir === 2) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, -1,0, 0,1);
+				else if (dir === 3) drawSpriteD(SPRITES.arrowHoriz, half.x,half.y,-1,0, 0,1);
+				else if (dir === 4) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, -1,0, 0,-1);
+				else if (dir === 5) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, 1,0, 0,-1);
+			}
+			if (mouse.action.held) {
+				const px = pixelPos(mouse.action.x, mouse.action.y);
+				drawSprite(px.x, px.y, SPRITES.cursorGrab);
+			}
+		}
+
 	}
 
 	/*//DEBUG: draw bounds:
@@ -703,11 +831,44 @@ function draw() {
 		);
 	}*/
 
+	/*
+	//clear buttons list
+	buttons = {};
+	function drawButton(name, x, y) {
+		ctx.globalAlpha = (name in mouse.over ? 1.0 : 0.5);
+		drawButton(x, y, SPRITES.BUTTONS.prev);
+		buttons.name = {x,y};
+	}*/
+
+	//draw UI:
+	if (board) {
+		ctx.globalAlpha = (mouse.overReset ? 1.0 : 0.5);
+		drawSprite(0, 0, SPRITES.BUTTONS.reset);
+
+		ctx.globalAlpha = (mouse.overStep ? 1.0 : 0.5);
+		drawSprite(Math.floor(ctx.width/2), 0, SPRITES.BUTTONS.step);
+
+		ctx.globalAlpha = (mouse.overUndo ? 1.0 : 0.5);
+		drawSprite(ctx.width-1, 0, SPRITES.BUTTONS.undo);
+	}
+	if (currentLevel > 0) {
+		ctx.globalAlpha = (mouse.overPrev ? 1.0 : 0.5);
+		drawSprite(0, ctx.height-1, SPRITES.BUTTONS.prev);
+	}
+	if (currentLevel + 1 < LEVELS.length && (currentLevel < maxLevel || isWon())) {
+		ctx.globalAlpha = (mouse.overNext ? 1.0 : 0.5);
+		drawSprite(ctx.width-1, ctx.height-1, SPRITES.BUTTONS.next);
+	}
+
+	ctx.globalAlpha = 1.0;
+
 
 	//draw mouse:
-	if (mouse.grab) {
-		const at = pixelPos(mouse.grab.grabbed.x, mouse.grab.grabbed.y);
-		drawSprite(at.x, at.y, SPRITES.cursorGrab);
+	if (mouse.action) {
+		//hand drawn on action
+	} else if (mouse.overPrev || mouse.overNext || mouse.overUndo || mouse.overStep || mouse.overReset) {
+		//no big hand
+		//drawSprite(mouse.x, mouse.y, SPRITES.cursorClick);
 	} else if (mouse.x === mouse.x) {
 		drawSprite(mouse.x, mouse.y, SPRITES.cursor);
 	}
@@ -733,6 +894,9 @@ function update(elapsed) {
 	if (board.tween < 1.0) {
 		board.tween = Math.min(1.0, board.tween + elapsed);
 	}
+	//basic animation loop:
+	loop = loop + elapsed;
+	loop -= Math.floor(loop);
 }
 
 //step board forward given current selected action:
@@ -752,6 +916,9 @@ function stepBoard(board) {
 	for (let sable of board.sables) {
 		delete sable.from;
 	}
+
+	//remove any old actions:
+	delete mouse.action;
 
 	{ //(1) rocks get shoved:
 		//note open tiles (for rocks):
@@ -781,29 +948,157 @@ function stepBoard(board) {
 		}
 
 		for (let rock of board.rocks) {
-			if (!('shove' in rock)) continue;
-			const key = `${rock.shove.x},${rock.shove.y}`;
+			if (!('shoved' in rock)) continue;
+			const key = `${rock.shoved.x},${rock.shoved.y}`;
 			if (key in open) {
 				//NOTE: assuming only one action(!)
 				open[`${rock.x},${rock.y}`] = true;
 				rock.from = {x:rock.x, y:rock.y};
-				rock.x = rock.shove.x;
-				rock.y = rock.shove.y;
+				rock.x = rock.shoved.x;
+				rock.y = rock.shoved.y;
 				delete open[key];
 			} else {
 				console.log("Invalid shove?!");
 			}
-			delete rock.shove; //remove old action
+			delete rock.shoved; //remove old action
 		}
 	}
 
 	{ //(2) sables get pulled:
+		setBehaviors(board);
+		for (let sable of board.sables) {
+			//if sable is getting pulled, and spot behind is open, do the work
+			if (!('pulled' in sable)) continue;
+
+			if (!('prev' in sable)) {
+				console.log("Can't pull if no prev!");
+				continue;
+			}
+
+			//remember pose for animation:
+			sable.from = sable.pts;
+
+			//insert prev point and back up pts: (note this also shifts off exit flags)
+			sable.pts = sable.pts.slice();
+			sable.pts.shift();
+			sable.pts.push(sable.prev);
+			//NOTE: if trying to resolve multiple pulls, this isn't going to quite work right.
+		}
+	}
+
+
+	{ //(3) sables bark, bite, or step:
+		setBehaviors(board);
+
+		//anything that isn't barking, biting, just got pulled, or is held go to next:
+		for (let sable of board.sables) {
+			if (!('next' in sable)) continue; //no step if no next
+			if (sable.bitten || sable.biting || sable.barking) continue; //no step if fussing at others
+			if (sable.held || sable.pulled) continue; //no step if got held or pulled
+
+			sable.from = sable.pts;
+			sable.pts = sable.pts.slice();
+			sable.pts.pop();
+			sable.pts.unshift({x:sable.next.x, y:sable.next.y});
+			if (sable.pts[1].exited) sable.pts[0].exited = true; //copy exited tag forward
+			for (let i = 0; i < sable.pts.length; ++i) {
+				if (isExit(board,sable.pts[i].x, sable.pts[i].y)) {
+					if (!sable.pts[i].exited) {
+						sable.pts[i] = {
+							x:sable.pts[i].x,
+							y:sable.pts[i].y,
+							exited:true
+						};
+					}
+				}
+			}
+		}
+	}
+
+	//clear all actions:
+	for (let sable of board.sables) {
+		delete sable.held;
+		delete sable.pulled;
+	}
+	setBehaviors(board);
+}
+
+function isExit(board, col, row) {
+	if (col < 0 || col >= board.size.x || row < 0 || row >= board.size.y) return true;
+	return board.ground[row][col] === SPRITES.HEXES.exit;
+}
+
+//compute 'next', 'prev', 'biting', 'bitten', 'barking' for sables
+// (given current hold, pull actions and rock positions)
+function setBehaviors(board) {
+
+	//clear existing actions lists:
+	board.actions = [];
+	for (let row = 0; row < board.size.y; ++row) {
+		const arr = [];
+		board.actions.push(arr);
+		for (let col = 0; col < board.size.x; ++col) {
+			arr.push([]);
+		}
+	}
+
+	//clear existing behaviors:
+	for (let sable of board.sables) {
+		delete sable.next; //where it would step if it could
+		delete sable.prev; //where it would get pulled if it could
+		delete sable.barking; //is it barking? value is object like {i:1, of:2}
+		delete sable.biting; //is it biting? value is true
+		delete sable.bitten; //value is list of biters (so can check self-bite for pull)
+	}
+
+	{ //set shoves for rocks:
+		//note open tiles (for rocks):
+		let open = {};
+		for (let y = 0; y < board.size.y; ++y) {
+			for (let x = 0; x < board.size.x; ++x) {
+				if (board.rockArea[y][x]) {
+					open[`${x},${y}`] = true;
+				}
+			}
+		}
+
+		//tiles containing rocks are not open:
+		for (let rock of board.rocks) {
+			delete open[`${rock.x},${rock.y}`];
+		}
+
+		//remove open for sable bodies / heads (tail is "open" but really just results in bites):
+		for (let sable of board.sables) {
+			for (let pt of sable.pts) {
+				if (pt.exited) {
+					//exited points are ~insubstantial~
+				} else {
+					delete open[`${pt.x},${pt.y}`];
+				}
+			}
+		}
+
+		for (let rock of board.rocks) {
+			for (let dir = 0; dir < 6; ++dir) {
+				let n = stepDir(rock, dir);
+				if (`${n.x},${n.y}` in open) {
+					board.actions[rock.y][rock.x].push({
+						shove:{x:n.x, y:n.y},
+						shoved:rock,
+						index:board.actions[rock.y][rock.x].length
+					});
+				}
+			}
+		}
+	}
+
+	{ //set 'prev':
 		//note open tiles (for pulls):
 		let open = {};
 		//must be a ground tile and *not* an exit:
 		for (let y = 0; y < board.size.y; ++y) {
 			for (let x = 0; x < board.size.x; ++x) {
-				if (board.ground[y][x] !== null && !isExit(x,y)) {
+				if (board.ground[y][x] !== null && !isExit(board,x,y)) {
 					open[`${x},${y}`] = true;
 				}
 			}
@@ -826,60 +1121,22 @@ function stepBoard(board) {
 		}
 
 		for (let sable of board.sables) {
-			//if sable is getting pulled, and spot behind is open, do the work
-			if (!('pull' in sable)) continue;
-
-			if (sable.pts[sable.pts.length-1].exited) {
-				console.log("Can't pull entirely exited sable?!");
-				delete sable.pull;
-				continue;
-			}
+			//must have some non-exited parts:
+			if (sable.pts[sable.pts.length-1].exited) continue;
+			//must have a tail to pull:
+			if (sable.tailLength === 0) continue;
 
 			const dir = getDir(sable.pts[sable.pts.length-2], sable.pts[sable.pts.length-1]);
-			const next = stepDir(sable.pts[sable.pts.length-1], dir);
+			const prev = stepDir(sable.pts[sable.pts.length-1], dir);
 
-			const key = `${next.x},${next.y}`;
-			if (key in open) {
-				delete open[key];
-
-				sable.from = sable.pts;
-				sable.pts.shift();
-				sable.pts.push(next);
-
-				//NOTE: if trying to resolve multiple pulls, this isn't going to quite work right.
-
-				//remove the most recent exit flag:
-				for (let i = sable.pts.length; i >= 0; --i) {
-					if (sable.pts[i].exited) {
-						sable.pts[i] = {
-							x:sable.pts[i].x,
-							y:sable.pts[i].y
-						};
-					}
-				}
-			} else {
-				console.log("Can't pull into full space!");
-				delete sable.pull;
-				continue;
+			if (`${prev.x},${prev.y}` in open) {
+				sable.prev = prev;
 			}
-
-			//decay to held sable: (or maybe leave on 'pull' so 'from' doesn't get reset?)
-			delete sable.pull;
-			sable.hold = true;
 		}
 	}
 
 
-	{ //(3) sables bark, bite, or step:
-
-		//clear existing barks, bites, steps:
-		for (let sable of board.sables) {
-			delete sable.next;
-			delete sable.barking;
-			delete sable.biting;
-			delete sable.bitten;
-		}
-
+	{ //set 'next' and barking/biting/bitten:
 		//note open tiles (for stepping/barking/biting):
 		let open = {};
 		//also note tails (for biting):
@@ -921,7 +1178,7 @@ function stepBoard(board) {
 		//exits are always open:
 		for (let y = -1; y <= board.size.y; ++y) {
 			for (let x = -1; x <= board.size.x; ++x) {
-				if (isExit(x,y)) {
+				if (isExit(board,x,y)) {
 					open[`${x},${y}`] = true;
 				}
 			}
@@ -938,15 +1195,8 @@ function stepBoard(board) {
 		//   * - o 0
 		//    . 4 3
 		for (let sable of board.sables) {
-			delete sable.next;
-
 			//fully exited sables don't move:
 			if (sable.pts[sable.pts.length-1].exited) {
-				continue;
-			}
-			//held sables don't move:
-			if (sable.held) {
-				delete sable.held;
 				continue;
 			}
 
@@ -971,13 +1221,16 @@ function stepBoard(board) {
 		//check for bites and barks:
 		let nexts = {};
 		for (let sable of board.sables) {
-			if (!('next' in sable)) continue; //no bite if no facing / held
+			//TODO: is ignoring held/pulled the right thing to do?
+			if (sable.held || sable.pulled) continue; //no bark or bite if held or pulled
+			if (!('next' in sable)) continue; //no bite if no facing
 			if (sable.pts[0].exited) continue; //no bite if head has exited
-			if (isExit(sable.next.x, sable.next.y)) continue; //no bite at exit
+			if (isExit(board,sable.next.x, sable.next.y)) continue; //no bite at exit
 			const key = `${sable.next.x},${sable.next.y}`;
 			if (key in tails) {
 				const target = tails[key];
-				target.bitten = true;
+				if (!('bitten' in target)) target.bitten = [];
+				target.bitten.push(sable);
 				sable.biting = true;
 			} else {
 				//only bark if not biting:
@@ -986,201 +1239,62 @@ function stepBoard(board) {
 			}
 		}
 
-		//check for resolve barks:
+		//check for + resolve barks:
 		for (let key in nexts) {
 			const list = nexts[key];
 			if (list.length <= 1) continue;
+			let i = 0;
 			for (let sable of list) {
-				sable.barking = true;
+				sable.barking = {i:i, of:list.length};
+				++i;
 			}
 		}
+	} //end of set next/barking/biting/bitten
 
-		//anything that isn't barking or biting, go to next:
+	for (let sable of board.sables) {
+		//mark tail for grabs:
+		for (let i = 1 + sable.bodyLength; i < sable.pts.length; ++i) {
+			const pt = sable.pts[i];
+			if (pt.exited) continue;
+			if (sable.prev && !sable.bitten) {
+				const to = (i + 1 < sable.pts.length ? sable.pts[i+1] : sable.prev);
+				board.actions[pt.y][pt.x].push({ pulled:sable, to:{x:to.x, y:to.y} });
+			} else {
+				board.actions[pt.y][pt.x].push({ held:sable });
+			}
+		}
+	}
+}
+
+function isWon() {
+	if (board) {
 		for (let sable of board.sables) {
-			if (!('next' in sable)) continue; //no step if no next
-			if (sable.bitten || sable.biting || sable.barking) continue; //no step if fussing at others
-			sable.from = sable.pts;
-			sable.pts.unshift({x:sable.next.x, y:sable.next.y});
-			sable.pts.pop();
-			for (let i = 0; i < sable.pts.length; ++i) {
-				if (isExit(sable.pts[i].x, sable.pts[i].y)) {
-					if (!sable.pts[i].exited) {
-						sable.pts[i] = {
-							x:sable.pts[i].x,
-							y:sable.pts[i].y,
-							exited:true
-						};
-					}
-				}
-			}
-			delete sable.next;
-		}
-	}
-}
-
-function isExit(col, row) {
-	if (col < 0 || col >= board.size.x || row < 0 || row >= board.size.y) return true;
-	return board.ground[row][col] === SPRITES.HEXES.exit;
-}
-
-//step step positions for all sables (grabbed sables don't step)
-function setBoardActions(board) {
-	//basic idea:
-	// all sables that aren't grabbed set their step:
-	//  - if there is a straight, set to straight
-	//  - else, if there is a short left, set to short left
-	//  - else, if there is a long left, set to long left
-	//  - else, if there is a short right, set to short right
-	//  - else, if there is a long right, set to long right
-	// i.e.:
-	//    . 2 1
-	//   * - o 0
-	//    . 4 3
-	// any sables stepping to a tile also being stepped to by other sables bark
-	
-	// any sable stepping to a tile occupied by a sable's tail instead bite
-	// any sable bitten, barking, or grabbed does not move
-
-	// (bitten sables contest tiles, while grabbed sables do not)
-	// (notice that grabbed sables cannot bite)
-
-	//grabbed sables can be dragged backward (tail direction)
-	// into any hex no sable is stepping into
-	// (as long as grabbed sable isn't bitten)
-
-	//clear existing steps, bites:
-	for (let sable of board.sables) {
-		delete sable.step;
-		delete sable.bite;
-		delete sable.bark;
-		delete sable.bitten;
-	}
-
-	//note open tiles:
-	let open = {};
-	for (let y = 0; y < board.size.y; ++y) {
-		for (let x = 0; x < board.size.x; ++x) {
-			if (board.ground[y][x] !== null) {
-				open[`${x},${y}`] = true;
+			for (let pt of sable.pts) {
+				if (!pt.exited) return false;
 			}
 		}
 	}
-
-	//tiles containing rocks are not open:
-	for (let rock of board.rocks) {
-		delete open[`${rock.x},${rock.y}`];
-	}
-
-	//remove open for sable bodies / heads (tail is "open" but really just results in bites):
-	for (let sable of board.sables) {
-		//TODO: DEAL WITH 'REMAIN' HERE!
-		delete open[`${sable.head.x},${sable.head.y}`];
-		for (let i = 0; i < sable.body.length; ++i) {
-			delete open[`${sable.body[i].x},${sable.body[i].y}`];
-		}
-		//NOTE: consider making last segment of body open if sable is moving and doesn't have a tail
-	}
-
-	//lazy way of adding exits as open:
-	for (let y = -1; y <= board.size.y; ++y) {
-		for (let x = -1; x <= board.size.x; ++x) {
-			if (isExit(x,y)) {
-				open[`${x},${y}`] = true;
-			}
-		}
-	}
-
-
-	//compute steps:
-	for (let sable of board.sables) {
-		if (sable.remain === 0) continue; //no step -- it's all gone
-
-		const dir = getDir(sable.body[0], sable.head);
-		if (sable.remain < 1 + sable.body.length + sable.tail.length) {
-			//already exiting
-			sable.step = stepDir(sable.head, dir);
-		} else {
-			//need to steer
-			[0,1,2,5,4].some((ofs) => {
-				const next = stepDir(sable.head, (dir+ofs)%6);
-				if (`${next.x},${next.y}` in open) {
-					sable.step = next;
-					return true;
-				} else {
-					return false;
-				}
-			});
-		}
-
-		if (sable.step) {
-			sable.wouldStep = sable.step;
-		} else {
-			sable.wouldStep = stepDir(sable.head, dir);
-		}
-
-		//grabbed sables don't step:
-		if (sable.grabbed) {
-			delete sable.step;
-		}
-	}
-
-	//check for barks:
-	let steps = {};
-	for (let sable of board.sables) {
-		if (sable.remain < 1 + sable.body.length + sable.tail.length) continue; //no bark if exiting
-		if (sable.step) {
-			if (isExit(sable.step.x, sable.step.y)) continue; //no bark at exit
-			const key = `${sable.step.x},${sable.step.y}`;
-			if (!(key in steps)) steps[key] = [];
-			steps[key].push(sable);
-		}
-	}
-	for (let key in steps) {
-		const list = steps[key];
-		if (list.length <= 1) continue;
-		for (let sable of list) {
-			sable.bark = sable.step;
-			delete sable.step;
-		}
-	}
-
-	//check for bites:
-	let tails = {};
-	for (let sable of board.sables) {
-		const first = Math.max(0, sable.tail.length - sable.remain); //don't check tail that has exited
-		for (let i = first; i < sable.tail.length; ++i) {
-			const key = `${sable.tail[i].x},${sable.tail[i].y}`;
-			console.assert(!(key in tails),"tails should not overlap");
-			tails[key] = sable;
-		}
-	}
-	for (let sable of board.sables) {
-		if (sable.remain < 1 + sable.body.length + sable.tail.length) continue; //no bite if exiting
-		if (sable.step) {
-			if (isExit(sable.step.x, sable.step.y)) continue; //no bite at exit
-			const key = `${sable.step.x},${sable.step.y}`;
-			if (key in tails) {
-				const target = tails[key];
-				target.bitten = target.step;
-				sable.bite = sable.step;
-				delete sable.step;
-			}
-		}
-	}
-	for (let sable of board.sables) {
-		if ('bitten' in sable) delete sable.step;
-	}
-
+	return true;
 }
 
 function execute() {
+	undoStack.push(cloneBoard(board));
 	stepBoard(board);
 }
 function undo() {
-	//TODO
+	if (undoStack.length) {
+		board = undoStack.pop();
+	}
+	delete mouse.action;
+	setBehaviors(board);
 }
 function reset() {
-	//TODO
+	if (undoStack.length) {
+		undoStack.push(cloneBoard(board));
+		board = cloneBoard(undoStack[0]);
+	}
+	delete mouse.action;
+	setBehaviors(board);
 }
 
 
@@ -1202,7 +1316,21 @@ function setup() {
 		function inRect(x,y,w,h) {
 			return (mouse.x >= x && mouse.x < x+w && mouse.y >= y && mouse.y < y+h);
 		}
+		function inSprite(x,y,sprite) {
+			return inRect( x + sprite.x - sprite.ax, y + -( (sprite.y + sprite.h) - sprite.ay ), sprite.w, sprite.h );
+		}
 
+		if (board) {
+			mouse.overReset = inSprite(0,0,SPRITES.BUTTONS.reset);
+			mouse.overStep = inSprite(Math.floor(ctx.width/2),0,SPRITES.BUTTONS.step);
+			mouse.overUndo = inSprite(ctx.width,0,SPRITES.BUTTONS.undo);
+		} else {
+			mouse.overReset = false;
+			mouse.overStep = false;
+			mouse.overUndo = false;
+		}
+		mouse.overPrev = inSprite(0,ctx.height-1,SPRITES.BUTTONS.prev);
+		mouse.overNext = inSprite(ctx.width,ctx.height,SPRITES.BUTTONS.next);
 		/*let resetX = isEnd ? Math.floor((ctx.width - SPRITES.reset.width) / 2) : 1;
 		mouse.overReset = (board || isEnd ? inRect(resetX,1,SPRITES.reset.width,SPRITES.reset.height) : false);
 		mouse.overUndo = (board ? inRect(ctx.width-1-SPRITES.undo.width,1,SPRITES.undo.width,SPRITES.undo.height) : false);
@@ -1228,35 +1356,65 @@ function setup() {
 	}
 
 	function handleDown() {
+		if (mouse.overPrev) {
+			prev();
+			return;
+		} else if (mouse.overNext) {
+			next();
+			return;
+		} else if (mouse.overUndo) {
+			undo();
+			return;
+		} else if (mouse.overReset) {
+			reset();
+			return;
+		} else if (mouse.overStep) {
+			execute();
+			return;
+		}
+		let oldAction = null;
+		if (mouse.action) {
+			oldAction = mouse.action;
+			if (mouse.action.held) {
+				delete mouse.action.held.held;
+			}
+			if (mouse.action.pulled) {
+				delete mouse.action.pulled.pulled;
+			}
+			if (mouse.action.shoved) {
+				delete mouse.action.shoved.shoved;
+			}
+			delete mouse.action;
+			setBehaviors(board); //update barking/biting for held/pulled
+		}
 		if (board) {
 			setMouseHex();
-			if ('hx' in mouse) {
-				let didGrab = false;
-				for (let sable of board.sables) {
-					for (let i = 0; i < sable.tail.length; ++i) {
-						let pos;
-						if (step > 0.5 && 'step' in sable) {
-							pos = (i === 0 ? sable.body[sable.body.length-1] : sable.tail[i-1]);
-						} else {
-							pos = sable.tail[i];
+			if ('hx' in mouse && 'actions' in board) {
+				if (0 <= mouse.hx && mouse.hx < board.size.x && 0 <= mouse.hy && mouse.hy < board.size.y) {
+					const list = board.actions[mouse.hy][mouse.hx];
+					if (list.length) {
+						let index = 0;
+						if (oldAction && oldAction.x === mouse.hx && oldAction.y === mouse.hy) {
+							index = oldAction.index + 1;
 						}
-						if (pos.x === mouse.hx && pos.y === mouse.hy) {
-							sable.grabbed = {x:mouse.hx, y:mouse.hy};
-							mouse.grab = sable;
-							didGrab = true;
+						if (index < list.length) {
+							mouse.action = list[index];
+							mouse.action.index = index;
+							mouse.action.x = mouse.hx;
+							mouse.action.y = mouse.hy;
 						}
 					}
-				}
-				if (didGrab) {
-					if (step < 0.5) {
-						setSteps(board);
-					}
-				}
-				if (!didGrab) {
-					for (let rock of board.rocks) {
-						if (rock.x === mouse.hx && rock.y === mouse.hy) {
-							mouse.rock = rock;
+					if (mouse.action) {
+						if (mouse.action.held) {
+							mouse.action.held.held = true;
 						}
+						if (mouse.action.pulled) {
+							mouse.action.pulled.pulled = true;
+						}
+						if (mouse.action.shoved) {
+							mouse.action.shoved.shoved = {x:mouse.action.shove.x, y:mouse.action.shove.y};
+						}
+						setBehaviors(board); //update barking/biting for held/pulled
 					}
 				}
 			}
@@ -1264,16 +1422,6 @@ function setup() {
 	}
 
 	function handleUp() {
-		if ('grab' in mouse) {
-			delete mouse.grab.grabbed;
-			delete mouse.grab;
-			if (step < 0.5) {
-				setSteps(board);
-			}
-		}
-		if ('rock' in mouse) {
-			delete mouse.rock;
-		}
 	}
 
 	canvas.addEventListener('touchstart', function(evt){
