@@ -94,6 +94,7 @@ let undoStack = [];
 //Tail: ['🡐', '🡗', '🡖', '🡒', '🡕', '🡔']
 
 const LEVELS = [
+	{ title:"title", picture:SPRITES.PICTURES.title},
 	/*{ title:"test", board:[
 		"@ @ 🡗 @ @ _ @",
 		" . ⇨ ⇨ o # _ X X X X X X",
@@ -160,7 +161,7 @@ const LEVELS = [
 
 	{ title:"multiple bounces", board:[
 	    "",
-		"     @ @ @ @ @ @     ",
+		"     @ @ @ @ @ X     ",
 		"    @ . . . . . @    ",
 		"   @ . . _ # . . @   ",
 		"  @ . @ . _ . . . @  ",
@@ -172,6 +173,7 @@ const LEVELS = [
 		"    @ . _ . . . @    ",
 		"     @ @ @ @ @ @     "
 	]},
+	{ title:"end", picture:SPRITES.PICTURES.end},
 ];
 
 LEVELS.forEach(function(level){
@@ -552,6 +554,10 @@ function draw() {
 
 		//ctx.fillStyle = '#f00';
 		//ctx.fillRect(x,y,1,1);
+	}
+
+	if (picture) {
+		drawSprite(0,0,picture);
 	}
 
 	function drawSpriteD(sprite, x,y, dx,dy, px,py) {
@@ -1027,8 +1033,10 @@ function draw() {
 
 function update(elapsed) {
 	//NOTE: should probably compute whether drawing is needed to save cpu.
-	if (board.tween < 1.0) {
-		board.tween = Math.min(1.0, board.tween + elapsed);
+	if (board) {
+		if (board.tween < 1.0) {
+			board.tween = Math.min(1.0, board.tween + elapsed);
+		}
 	}
 	//basic animation loop:
 	loop += elapsed;

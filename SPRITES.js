@@ -58,6 +58,11 @@ const SPRITES = {
 		prev:{x:221,y:324,w:55,h:20,ax:221,ay:324},
 		next:{x:292,y:324,w:55,h:20,ax:346,ay:324},
 	},
+
+	PICTURES:{
+		title:{x:240, y:0, w:250, h:212, ax:240, ay:211},
+		end:{x:480, y:0, w:250, h:212, ax:480, ay:211},
+	},
 };
 
 SPRITES.body.outline = SPRITES.bodyOutline;
