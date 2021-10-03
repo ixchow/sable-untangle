@@ -114,18 +114,15 @@ const LEVELS = [
 		"@ @ @ @ @ @ @",
 	]},
 	{ title:"sable turn left", board:[
-		"X X X X X X X X X X X",
-		" X X X X X X X X X X ",
-		"X X X . . . . . X X X",
-		" X X . . # @ . . X X ",
-		"X X . @ . _ . . . X X",
+		"    X . . . . . X X X",
+		"   X . . # @ . . X X ",
+		"  X . @ . _ . . . X X",
 		" X . . . . . . @ . X ",
 		"X . . 🡖 . . . . . . X",
 		" X . @ 🡖 . . . . . X ",
-		"X X . . ⇨ ⇨ o @ . X X",
-		" X X . . @ . . . X X ",
-		"X X X . . . . . X X X",
-		" X X X X X X X X X X ",
+		"  X . . ⇨ ⇨ o @ . X X",
+		"   X . . @ . . . X X ",
+		"    X . . . . . X X X",
 	]},
 ];
 
@@ -558,20 +555,20 @@ function draw() {
 		//shines:
 		for (let row = 0; row < board.size.y; ++row) {
 			for (let col = 0; col < board.size.x; ++col) {
-				if (board.ground[row][col] !== SPRITES.HEXES.exit) continue;
+				if (board.ground[row][col] === SPRITES.HEXES.exit) continue;
+				if (board.ground[row][col] === null) continue;
+				//only filled ground which isn't an exit
 				for (let dir = 0; dir < 6; ++dir) {
 					const n = stepDir({x:col, y:row}, dir);
-					if (n.x >= 0 && n.x < board.size.x && n.y >= 0 && n.y < board.size.y) {
-						if (board.ground[n.y][n.x] !== null && board.ground[n.y][n.x] !== SPRITES.HEXES.exit) {
-							let {x,y} = pixelPos(n.x, n.y);
-							//draw shine!
-							if      (dir == 0) drawSpriteD(SPRITES.shine, x,y,-1,0, 0,1);
-							else if (dir == 1) drawSpriteD(SPRITES.shineDiag, x,y,-1,0, 0,-1);
-							else if (dir == 2) drawSpriteD(SPRITES.shineDiag, x,y, 1,0, 0,-1);
-							else if (dir == 3) drawSpriteD(SPRITES.shine, x,y, 1,0, 0,1);
-							else if (dir == 4) drawSpriteD(SPRITES.shineDiag, x,y, 1,0, 0,1);
-							else if (dir == 5) drawSpriteD(SPRITES.shineDiag, x,y,-1,0, 0,1);
-						}
+					if (isExit(n.x, n.y)) {
+						let {x,y} = pixelPos(col, row);
+						//draw shine!
+						if      (dir == 0) drawSpriteD(SPRITES.shine, x,y, 1,0, 0,1);
+						else if (dir == 1) drawSpriteD(SPRITES.shineDiag, x,y, 1,0, 0, 1);
+						else if (dir == 2) drawSpriteD(SPRITES.shineDiag, x,y,-1,0, 0, 1);
+						else if (dir == 3) drawSpriteD(SPRITES.shine, x,y,-1,0, 0,1);
+						else if (dir == 4) drawSpriteD(SPRITES.shineDiag, x,y,-1,0, 0,-1);
+						else if (dir == 5) drawSpriteD(SPRITES.shineDiag, x,y, 1,0, 0,-1);
 					}
 				}
 			}
@@ -594,7 +591,7 @@ function draw() {
 
 		//sables:
 		for (let sable of board.sables) {
-			let {x:hx,y:hy} = pixelPos(sable.head.x, sable.head.y);
+			if (sable.remain === 0) continue; //don't draw if entirely gone
 
 			let pts = [];
 			function addPoint(at, sprite, S) {
@@ -693,6 +690,10 @@ function draw() {
 
 			if (DEBUG_draw) console.log(pts);
 
+			//hides sable after exit:
+			//const begin = 2*(1 + sable.body.length + sable.tail.length)-1 - 2 * sable.remain;
+			const begin = 0;
+
 			function drawLegs(pt, Y) {
 				let ox = -pt.d.y;
 				let oy = pt.d.x;
@@ -705,21 +706,22 @@ function draw() {
 				drawSpriteD(SPRITES.paw, pt.x + ox*PY + pt.d.x*PX, pt.y + oy*PY + pt.d.y*PX, pt.d.x, pt.d.y);
 				drawSpriteD(SPRITES.paw, pt.x + ox*-PY + pt.d.x*PX, pt.y + oy*-PY + pt.d.y*PX, pt.d.x, pt.d.y,  pt.d.y, -pt.d.x);
 			}
-
 		
-			pts.forEach((pt) => {
-				if (pt.sprite.outline) {
+			pts.forEach((pt,i) => {
+				if (i >= begin && pt.sprite.outline) {
 					drawSpriteD(pt.sprite.outline, pt.x, pt.y, pt.S * pt.d.x, pt.S * pt.d.y);
 				}
 			});
 
-			drawLegs(pts[1], 0);
-			drawLegs(pts[sable.body.length*2], 1);
+			if (1 >= begin) drawLegs(pts[1], 0);
+			if (sable.body.legnth >= begin) drawLegs(pts[sable.body.length*2], 1);
 
 			for (let i = 1; i < pts.length; i += 2) {
+				if (i < begin) continue;
 				drawSpriteD(pts[i].sprite, pts[i].x, pts[i].y, pts[i].S * pts[i].d.x, pts[i].S * pts[i].d.y);
 			}
 			for (let i = pts.length-1; i >= 0; i -= 2) {
+				if (i < begin) continue;
 				drawSpriteD(pts[i].sprite, pts[i].x, pts[i].y, pts[i].S * pts[i].d.x, pts[i].S * pts[i].d.y);
 			}
 			/*
@@ -808,9 +810,29 @@ function stepBoard(board) {
 			sable.head.y = sable.step.y;
 
 			delete sable.step;
+
+			//check if more of (/ any of) sable has exited:
+			let check;
+			if (sable.remain <= sable.tail.length) {
+				check = sable.tail[sable.tail.length - sable.remain];
+			} else if (sable.remain <= sable.tail.length + sable.body.length) {
+				check = sable.body[sable.body.length + sable.tail.length - sable.remain];
+			} else {
+				console.assert(sable.remain === sable.body.length + sable.tail.length + 1);
+				check = sable.head;
+			}
+
+			if (isExit(check.x, check.y)) {
+				sable.remain -= 1;
+			}
 		}
 	}
 	setSteps(board);
+}
+
+function isExit(col, row) {
+	if (col < 0 || col >= board.size.x || row < 0 || row >= board.size.y) return true;
+	return board.ground[row][col] === SPRITES.HEXES.exit;
 }
 
 //step step positions for all sables (grabbed sables don't step)
@@ -862,6 +884,7 @@ function setSteps(board) {
 
 	//remove open for sable bodies / heads (tail is "open" but really just results in bites):
 	for (let sable of board.sables) {
+		//TODO: DEAL WITH 'REMAIN' HERE!
 		delete open[`${sable.head.x},${sable.head.y}`];
 		for (let i = 0; i < sable.body.length; ++i) {
 			delete open[`${sable.body[i].x},${sable.body[i].y}`];
@@ -869,19 +892,36 @@ function setSteps(board) {
 		//NOTE: consider making last segment of body open if sable is moving and doesn't have a tail
 	}
 
+	//lazy way of adding exits as open:
+	for (let y = -1; y <= board.size.y; ++y) {
+		for (let x = -1; x <= board.size.x; ++x) {
+			if (isExit(x,y)) {
+				open[`${x},${y}`] = true;
+			}
+		}
+	}
+
+
 	//compute steps:
 	for (let sable of board.sables) {
+		if (sable.remain === 0) continue; //no step -- it's all gone
 
 		const dir = getDir(sable.body[0], sable.head);
-		[0,1,2,5,4].some((ofs) => {
-			const next = stepDir(sable.head, (dir+ofs)%6);
-			if (`${next.x},${next.y}` in open) {
-				sable.step = next;
-				return true;
-			} else {
-				return false;
-			}
-		});
+		if (sable.remain < 1 + sable.body.length + sable.tail.length) {
+			//already exiting
+			sable.step = stepDir(sable.head, dir);
+		} else {
+			//need to steer
+			[0,1,2,5,4].some((ofs) => {
+				const next = stepDir(sable.head, (dir+ofs)%6);
+				if (`${next.x},${next.y}` in open) {
+					sable.step = next;
+					return true;
+				} else {
+					return false;
+				}
+			});
+		}
 
 		if (sable.step) {
 			sable.wouldStep = sable.step;
@@ -898,7 +938,9 @@ function setSteps(board) {
 	//check for barks:
 	let steps = {};
 	for (let sable of board.sables) {
+		if (sable.remain < 1 + sable.body.length + sable.tail.length) continue; //no bark if exiting
 		if (sable.step) {
+			if (isExit(sable.step.x, sable.step.y)) continue; //no bark at exit
 			const key = `${sable.step.x},${sable.step.y}`;
 			if (!(key in steps)) steps[key] = [];
 			steps[key].push(sable);
@@ -916,14 +958,17 @@ function setSteps(board) {
 	//check for bites:
 	let tails = {};
 	for (let sable of board.sables) {
-		for (let i = 0; i < sable.tail.length; ++i) {
+		const first = Math.max(0, sable.tail.length - sable.remain); //don't check tail that has exited
+		for (let i = first; i < sable.tail.length; ++i) {
 			const key = `${sable.tail[i].x},${sable.tail[i].y}`;
 			console.assert(!(key in tails),"tails should not overlap");
 			tails[key] = sable;
 		}
 	}
 	for (let sable of board.sables) {
+		if (sable.remain < 1 + sable.body.length + sable.tail.length) continue; //no bite if exiting
 		if (sable.step) {
+			if (isExit(sable.step.x, sable.step.y)) continue; //no bite at exit
 			const key = `${sable.step.x},${sable.step.y}`;
 			if (key in tails) {
 				const target = tails[key];
@@ -1090,7 +1135,7 @@ function setup() {
 	window.addEventListener('resize', resized);
 	resized();
 
-	let requestAnimFrame =
+	const requestAnimFrame =
 		window.requestAnimationFrame
 		|| window.webkitRequestAnimationFrame
 		|| window.mozRequestAnimationFrame
