@@ -7,7 +7,11 @@
 body {
 	margin:0;
 	padding:0;
-	background:#aa9070;
+	width:100vw;
+	height:100vh;
+	display:flex;
+	flex-flow:column;
+	background:#988;
 }
 #canvas {
 	position:absolute;
@@ -30,13 +34,17 @@ body {
 	-ms-interpolation-mode: nearest-neighbor;   /* IE                            */
 }
 #game {
-	position:absolute;
-	top:0;
-	left:0;
-	width:100vw;
-	height:100vh;
-	padding:0;
-	background:#988;
+	position:relative;
+	flex-grow:1;
+}
+#info {
+	text-align:center;
+	font-size:10pt;
+	color:#112;
+	margin:5px 0 5px 0;
+}
+#info a {
+	color:#332;
 }
 </style>
 <script src="SPRITES.js"></script>
@@ -44,10 +52,10 @@ body {
 </head>
 <body onload="setup()">
 <div id="game">
-<canvas id="canvas" width="240" height="200" ></canvas>
+<canvas id="canvas" width="240" height="212" ></canvas>
 </div>
-<p>
-This is "Sable Untangle", a game made in 48 hours for <a href="https://ldjam.com/events/ludum-dare/49">Ludum Dare 49: Unstable</a> by <a href="">Jim McCann / TCHOW llc</a>.
+<p id="info">
+This is "Sable Untangle", a game made in 48 hours for <a href="https://ldjam.com/events/ludum-dare/49">Ludum Dare 49: Unstable</a> by <a href="http://tchow.com">Jim McCann / TCHOW llc</a>.
 (c) 2021 Jim McCann.
 See <a href="https://github.com/ixchow/sable-untangle">github</a> for source.
 </p>

@@ -83,6 +83,7 @@ let board = {
 };
 
 let loop = 0.0;
+let breathe = 0.0;
 
 let picture = null;
 let isEnd = false;
@@ -524,7 +525,7 @@ function draw() {
 	if (board) {
 		board.offset = {
 			x:Math.floor((ctx.width - (board.bounds.max.x + 1 - board.bounds.min.x))/2-board.bounds.min.x),
-			y:Math.floor((ctx.height - (board.bounds.max.y + 1 - board.bounds.min.y))/2-board.bounds.min.y)
+			y:Math.floor((ctx.height-10 - (board.bounds.max.y + 1 - board.bounds.min.y))/2-board.bounds.min.y + 10)
 		};
 		if (DEBUG_draw) console.log(`Offset of ${board.offset.x},${board.offset.y} in ctx of size ${ctx.width}x${ctx.height} for board of size ${board.bounds.max.x+1-board.bounds.min.x}x${board.bounds.max.y+1-board.bounds.min.y}`);
 	}
@@ -583,6 +584,22 @@ function draw() {
 		//ctx.fillRect(x,y,1,1);
 	}
 
+
+	function drawAction(at, to) {
+		const px = pixelPos(at.x, at.y);
+		drawSprite(px.x, px.y, SPRITES.cursorGrab);
+		if (to) {
+			const toPx = pixelPos(to.x, to.y);
+			const half = lerp(px, toPx, 0.7);
+			const dir = getDir(at, to);
+			if      (dir === 0) drawSpriteD(SPRITES.arrowHoriz, half.x,half.y, 1,0, 0,1);
+			else if (dir === 1) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, 1,0, 0,1);
+			else if (dir === 2) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, -1,0, 0,1);
+			else if (dir === 3) drawSpriteD(SPRITES.arrowHoriz, half.x,half.y,-1,0, 0,1);
+			else if (dir === 4) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, -1,0, 0,-1);
+			else if (dir === 5) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, 1,0, 0,-1);
+		}
+	}
 
 
 	//draw board:
@@ -663,47 +680,168 @@ function draw() {
 			drawSprite(px.x, px.y, rock.sprite);
 		}
 
+		let layerOutline = [];
+		let layerLegs = [];
+		let layerConnect = [];
+		let layerBody = [];
+		let layerHead = [];
+
 		//sables:
+		let sableIndex = -1;
 		for (let sable of board.sables) {
+			sableIndex += 1;
 			if (sable.remain === 0) continue; //don't draw if entirely gone
 
 			//TODO: do drawing loop in one pass and handle animation (and extra neck) into the mix because, um, why not?
 
-			let pts = [];
-			function addPoint(at, sprite, A, S) {
+		
+			function addSprite(layer, sprite, at, A, S, dx, dy) {
+				if (A === 0.0) return;
+
 				if (typeof(S) === 'undefined') S = 1.0;
-				pts.push({x:at.x, y:at.y, sprite:sprite, A, S});
+				if (typeof(dx) === 'undefined') dx = {x:1, y:0};
+				if (typeof(dy) === 'undefined') dy = {x:-dx.y, y:dx.x};
+				layer.push({sprite, x:at.x, y:at.y, A, S, dx, dy});
+
+				if (layer !== layerOutline && sprite.outline) {
+					addSprite(layerOutline, sprite.outline, at, A, S, dx, dy);
+				}
 			}
+
+			function drawLegs(at, A, S, d, Y) {
+				if (A === 0.0) return;
+				let ox = -d.y;
+				let oy = d.x;
+				const HX = 0;
+				const HY = 5 + Y;
+				addSprite(layerLegs, SPRITES.leg, {x:at.x + ox*HY + d.x*HX, y:at.y + oy*HY + d.y*HX}, A, 1.0, d);
+				addSprite(layerLegs, SPRITES.leg, {x:at.x + ox*-HY + d.x*HX, y:at.y + oy*-HY + d.y*HX}, A, 1.0, d, {x:d.y, y:-d.x});
+				const PX = 7;
+				const PY = 7 + Y;
+				addSprite(layerLegs, SPRITES.paw, {x:at.x + ox*PY + d.x*PX, y:at.y + oy*PY + d.y*PX}, A, 1.0, d);
+				addSprite(layerLegs, SPRITES.paw, {x:at.x + ox*-PY + d.x*PX, y:at.y + oy*-PY + d.y*PX}, A, 1.0, d,  {x:d.y, y:-d.x});
+			}
+		
 			for (let i = 0; i < sable.pts.length; ++i) {
 				const at = pixelPos(sable.pts[i].x, sable.pts[i].y);
 				const A = (sable.pts[i].exited ? 0.0 : 1.0);
 				if (i === 0) {
+					let n;
+					if (sable.next) {
+						n = pixelPos(sable.next.x, sable.next.y);
+					} else {
+						n = pixelPos(sable.pts[i+1].x, sable.pts[i+1].y);
+						n.x = at.x + (at.x - n.x);
+						n.y = at.y + (at.y - n.y);
+					}
+					let dx = normalize({
+						x:n.x - at.x,
+						y:n.y - at.y
+					});
+
+
 					if (sable.barking && sable.next) {
-						const n = pixelPos(sable.next.x, sable.next.y);
 						let amt = loop * sable.barking.of - sable.barking.i;
 						if (amt > 0.0 && amt < 0.9) {
-							drawSprite(n.x, n.y, SPRITES.bark);
-							addPoint(at, SPRITES.headBark, A);
+							addSprite(layerBody, SPRITES.bark, n, 1.0); // '!' effect
+							addSprite(layerHead, SPRITES.headBark, at, A, 1.0, dx);
+
+							//extra neck:
+							const prev = pixelPos(sable.pts[i+1].x, sable.pts[i+1].y);
+							const mid = lerp(at, prev, 0.5);
+							addSprite(layerConnect, SPRITES.body, lerp(mid, at, 0.7), A, 0.7, dx);
 						} else {
-							addPoint(at, SPRITES.head, A);
+							addSprite(layerHead, SPRITES.head, at, A, 1.0, dx);
 						}
 					} else if (sable.biting && sable.next) {
-						const n = pixelPos(sable.next.x, sable.next.y);
-						addPoint(at, SPRITES.headBite, A);
+						const h = lerp(at, n, 0.7);
+						addSprite(layerHead, SPRITES.headBite, h, A, 1.0, dx);
+						addSprite(layerConnect, SPRITES.headJaw, h, A, 1.0, dx);
+
+						//extra neck:
+						const prev = pixelPos(sable.pts[i+1].x, sable.pts[i+1].y);
+						const mid = lerp(at, prev, 0.5);
+						const d2 = normalize({
+							x:h.x - mid.x,
+							y:h.y - mid.y
+						});
+						addSprite(layerConnect, SPRITES.body, lerp(mid, at, 0.7), A, 0.7, d2);
 					} else {
-						addPoint(at, SPRITES.head, A);
+						addSprite(layerHead, SPRITES.head, at, A, 1.0, dx);
 					}
 				} else if (i <= sable.bodyLength) {
-					const b = i - 1;
-					addPoint(lerp(at, pts[pts.length-1], 0.5), SPRITES.body, A, (b === 0 ? 0.7 : 1.0));
-					addPoint(at, SPRITES.body, A);
+					const b = i - 1; //index in body
+
+					const n = pixelPos(sable.pts[i-1].x, sable.pts[i-1].y);
+
+					let S = Math.sin(breathe * Math.PI * 2.0 + sableIndex) * 0.05 + 0.92;
+					S = ((b + 1.0) / sable.bodyLength) * (1.0 - S) + S;
+
+					{ //neck/body connector:
+						const d2 = normalize({
+							x:n.x - at.x,
+							y:n.y - at.y
+						});
+						addSprite(layerConnect, SPRITES.body, lerp(at, n, 0.5), A, (b === 0 ? 0.7 : S), d2);
+
+						if (b === 0) {
+							drawLegs(lerp(at,n,0.5), A, 0.7, d2, 0);
+						}
+					}
+
+					let d;
+					if (i + 1 < sable.pts.length) {
+						const p = pixelPos(sable.pts[i+1].x, sable.pts[i+1].y);
+						d = normalize({
+							x:n.x - p.x,
+							y:n.y - p.y
+						});
+					} else {
+						d = normalize({
+							x:n.x - at.x,
+							y:n.y - at.y
+						});
+					}
+
+					addSprite(layerBody, SPRITES.body, at, A, S, d);
+
+					if (b + 1 === sable.bodyLength) {
+						drawLegs(at, A, 1.0, d, 2);
+					}
 				} else {
-					const t = i - 1 - sable.bodyLength;
-					addPoint(lerp(at, pts[pts.length-1], 0.5), SPRITES.tail, A, (t === 0 ? 0.7 : 1.0));
-					addPoint(at, SPRITES.tail, A);
+					const t = i - 1 - sable.bodyLength; //index in tail
+
+					const n = pixelPos(sable.pts[i-1].x, sable.pts[i-1].y);
+
+					{ //neck/body connector:
+						const d2 = normalize({
+							x:n.x - at.x,
+							y:n.y - at.y
+						});
+						addSprite(layerConnect, SPRITES.tail, lerp(at, n, 0.5), A, (t === 0 ? 0.7 : 1.0), d2);
+					}
+
+					let d;
+					if (i + 1 < sable.pts.length) {
+						const p = pixelPos(sable.pts[i+1].x, sable.pts[i+1].y);
+						d = normalize({
+							x:n.x - p.x,
+							y:n.y - p.y
+						});
+					} else {
+						d = normalize({
+							x:n.x - at.x,
+							y:n.y - at.y
+						});
+					}
+
+					addSprite(layerBody, SPRITES.tail, at, A, 1.0, d);
+
+
 				}
 			}
 
+			/*OLD:
 			for (let i = 0; i < pts.length; ++i) {
 				if (i == 0) {
 					if (sable.next) {
@@ -777,6 +915,19 @@ function draw() {
 
 		}
 
+		
+		function drawLayer(layer) {
+			for (let pt of layer) {
+				ctx.globalAlpha = pt.A;
+				drawSpriteD(pt.sprite, pt.x, pt.y,
+					pt.S * pt.dx.x, pt.S * pt.dx.y,
+					pt.S * pt.dy.x, pt.S * pt.dy.y
+				);
+			}
+		}
+		[ layerOutline, layerLegs, layerConnect, layerBody, layerHead ].forEach( drawLayer );
+
+
 		//draw exits over sables:
 		for (let key of Object.values(exits)) {
 			let {x,y} = pixelPos(key.x, key.y);
@@ -786,34 +937,13 @@ function draw() {
 		//draw actions:
 		if (mouse.action) {
 			if (mouse.action.shoved) {
-				const px = pixelPos(mouse.action.shoved.x, mouse.action.shoved.y);
-				const to = pixelPos(mouse.action.shoved.shoved.x, mouse.action.shoved.shoved.y);
-				const half = lerp(px, to, 0.7);
-				const dir = getDir(mouse.action.shoved, mouse.action.shoved.shoved);
-				drawSprite(px.x, px.y, SPRITES.cursorGrab);
-				if      (dir === 0) drawSpriteD(SPRITES.arrowHoriz, half.x,half.y, 1,0, 0,1);
-				else if (dir === 1) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, 1,0, 0,1);
-				else if (dir === 2) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, -1,0, 0,1);
-				else if (dir === 3) drawSpriteD(SPRITES.arrowHoriz, half.x,half.y,-1,0, 0,1);
-				else if (dir === 4) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, -1,0, 0,-1);
-				else if (dir === 5) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, 1,0, 0,-1);
+				drawAction(mouse.action.shoved, mouse.action.shoved.shoved);
 			}
 			if (mouse.action.pulled) {
-				const px = pixelPos(mouse.action.x, mouse.action.y);
-				const to = pixelPos(mouse.action.to.x, mouse.action.to.y);
-				const half = lerp(px, to, 0.7);
-				const dir = getDir(mouse.action, mouse.action.to);
-				drawSprite(px.x, px.y, SPRITES.cursorGrab);
-				if      (dir === 0) drawSpriteD(SPRITES.arrowHoriz, half.x,half.y, 1,0, 0,1);
-				else if (dir === 1) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, 1,0, 0,1);
-				else if (dir === 2) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, -1,0, 0,1);
-				else if (dir === 3) drawSpriteD(SPRITES.arrowHoriz, half.x,half.y,-1,0, 0,1);
-				else if (dir === 4) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, -1,0, 0,-1);
-				else if (dir === 5) drawSpriteD(SPRITES.arrowDiag, half.x,half.y, 1,0, 0,-1);
+				drawAction(mouse.action, mouse.action.to);
 			}
 			if (mouse.action.held) {
-				const px = pixelPos(mouse.action.x, mouse.action.y);
-				drawSprite(px.x, px.y, SPRITES.cursorGrab);
+				drawAction(mouse.action);
 			}
 		}
 
@@ -870,7 +1000,13 @@ function draw() {
 		//no big hand
 		//drawSprite(mouse.x, mouse.y, SPRITES.cursorClick);
 	} else if (mouse.x === mouse.x) {
-		drawSprite(mouse.x, mouse.y, SPRITES.cursor);
+		if (board && mouse.hx >= 0 && mouse.hx < board.size.x && mouse.hy >= 0 && mouse.hy < board.size.y && board.actions[mouse.hy][mouse.hx].length) {
+			ctx.globalAlpha = 0.8 + Math.sin(loop * 2.0 * Math.PI * 2.0) * 0.1;
+			drawAction({x:mouse.hx, y:mouse.hy});
+			ctx.globalAlpha = 1.0;
+		} else {
+			drawSprite(mouse.x, mouse.y, SPRITES.cursor);
+		}
 	}
 	//draw mouse (DEBUG):
 	if (mouse.x === mouse.x) {
@@ -895,8 +1031,11 @@ function update(elapsed) {
 		board.tween = Math.min(1.0, board.tween + elapsed);
 	}
 	//basic animation loop:
-	loop = loop + elapsed;
+	loop += elapsed;
 	loop -= Math.floor(loop);
+	//breathing animation loop:
+	breathe += elapsed / 2.0;
+	breathe -= Math.floor(breathe);
 }
 
 //step board forward given current selected action:

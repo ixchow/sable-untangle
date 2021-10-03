@@ -22,14 +22,17 @@ const SPRITES = {
 	//body:{x:24, y:49, w:20, h:16, ax:34, ay:56},
 
 	headBark:{x:68,y:26,w:17,h:20,ax:70, ay:36},
-	headBite:{x:71,y:47,w:15,h:20,ax:66, ay:56}, //79 is too far right.
-	headJaw:{x:87,y:53,w:7,h:5,ax:87, ay:56},
+	//anchor is bite point
+	headBite:{x:71,y:47,w:15,h:20,ax:84, ay:56},
+	headJaw:{x:87,y:53,w:7,h:9,ax:90, ay:56},
 
 	bark:{x:89,y:26,w:13,h:19,ax:95,ay:35},
 
 	body:{x:27, y:72, w:16, h:16, ax:34, ay:79},
 	bodyOutline:{x:48, y:71, w:18, h:18, ax:56, ay:79},
-	tail:{x:2, y:49, w:19, h:17, ax:12, ay:56},
+	tail:{x:2, y:50, w:18, h:14, ax:12, ay:56},
+	tailOutline:{x:3, y:71, w:19, h:17, ax:12, ay:78},
+
 	paw:{x:43, y:36, w:5, h:4, ax:43, ay:38},
 	leg:{x:31, y:35, w:10, h:7, ax:33, ay:40},
 	cursorGrab:{x:143, y:44, w:18, h:20, ax:151, ay:53},
@@ -58,3 +61,4 @@ const SPRITES = {
 };
 
 SPRITES.body.outline = SPRITES.bodyOutline;
+SPRITES.tail.outline = SPRITES.tailOutline;
