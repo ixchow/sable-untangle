@@ -1,6 +1,6 @@
 # Sable Untangle
 
-Sable Untangle is a game for [LD49: Unstable](https://ldjam.com/events/ludum-dare/49) by [Jim McCann / TCHOW llc](http://tchow.com).
+Sable Untangle is a game for [LD49: Unstable](https://ldjam.com/events/ludum-dare/49) by [Jim McCann / TCHOW llc](http://tchow.com). Rate and comment at the [Ludum Dare Page](https://ldj.am/$265912).
 
 [Play in your browser](https://ixchow.github.io/sable-untangle).
 
