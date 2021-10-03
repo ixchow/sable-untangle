@@ -45,6 +45,8 @@ const SPRITES = {
 		dirt:{x:25, y:1, w:22, h:25, ax:36, ay:13},
 		dirt2:{x:48, y:1, w:22, h:25, ax:59, ay:13},
 		grass:{x:71, y:1, w:22, h:25, ax:82, ay:13},
+
+		exit:{x:71, y:1, w:22, h:25, ax:82, ay:13},
 	},
 	head:{x:48, y:45, w:18, h:22, ax:56, ay:56},
 	//body:{x:24, y:49, w:20, h:16, ax:34, ay:56},
@@ -60,6 +62,9 @@ const SPRITES = {
 	rockSpot:{x:170, y:77, w:13, h:14, ax:176, ay:83},
 	rockHoriz:{x:165, y:99, w:23, h:11, ax:175, ay:104},
 	rockDiag:{x:186, y:77, w:19, h:22, ax:195, ay:87},
+
+	shine:{x:94, y:1, w:23, h:26, ax:105, ay:13},
+	shineDiag:{x:119, y:1, w:23, h:26, ax:130, ay:13},
 };
 
 SPRITES.body.outline = SPRITES.bodyOutline;
@@ -105,12 +110,26 @@ let undoStack = [];
 const LEVELS = [
 	{ title:"test", board:[
 		"@ @ 🡗 @ @ _ @",
-		" . ⇨ ⇨ o # _ ",
+		" . ⇨ ⇨ o # _ X X X X X X",
 		"@ @ @ @ @ @ @",
-	]}
+	]},
+	{ title:"sable turn left", board:[
+		"X X X X X X X X X X X",
+		" X X X X X X X X X X ",
+		"X X X . . . . . X X X",
+		" X X . . # @ . . X X ",
+		"X X . @ . _ . . . X X",
+		" X . . . . . . @ . X ",
+		"X . . 🡖 . . . . . . X",
+		" X . @ 🡖 . . . . . X ",
+		"X X . . ⇨ ⇨ o @ . X X",
+		" X X . . @ . . . X X ",
+		"X X X . . . . . X X X",
+		" X X X X X X X X X X ",
+	]},
 ];
 
-board = makeBoard(LEVELS[0].board);
+board = makeBoard(LEVELS[1].board);
 
 function makeBoard(map_) {
 	//flip map_ over to save on indexing hassle:
@@ -172,7 +191,8 @@ function makeBoard(map_) {
 		const sable = {
 			head:{x:at.x, y:at.y},
 			body:[],
-			tail:[]
+			tail:[],
+			//remain: //count of segments that haven't left yet
 		};
 		//search for body:
 		while (true) {
@@ -209,6 +229,8 @@ function makeBoard(map_) {
 			sable.tail.push({x:found.x, y:found.y});
 			map[found.y][found.x] = '.';
 		}
+
+		sable.remain = 1 + sable.body.length + sable.tail.length;
 
 		made.sables.push(sable);
 	}
@@ -255,11 +277,36 @@ function makeBoard(map_) {
 		for (let col = 0; col < made.size.x; ++col) {
 			if (map[row][col] === '.') {
 				arr.push(SPRITES.HEXES.dirt);
+			} else if (map[row][col] === 'X') {
+				arr.push(SPRITES.HEXES.exit);
 			} else {
 				arr.push(null);
 			}
 		}
 	}
+
+	made.offset = {x:0, y:0};
+	made.bounds = {
+		min:{x:Infinity, y:Infinity},
+		max:{x:-Infinity, y:-Infinity}
+	};
+	for (let row = 0; row < made.size.y; ++row) {
+		for (let col = 0; col < made.size.x; ++col) {
+			if (made.ground[row][col] === null) continue;
+			if (made.ground[row][col] === SPRITES.HEXES.exit) continue;
+			console.log(col, row);
+			let px = {
+				x:(col + (row % 2 == 0 ? 0 : 0.5)) * HEX_WIDTH,
+				y:row * HEX_HEIGHT
+			};
+			//hard coded additions to get things lined up just so:
+			made.bounds.min.x = Math.min(made.bounds.min.x, px.x - 11);
+			made.bounds.min.y = Math.min(made.bounds.min.y, px.y - 13);
+			made.bounds.max.x = Math.max(made.bounds.max.x, px.x + 11);
+			made.bounds.max.y = Math.max(made.bounds.max.y, px.y + 12);
+		}
+	}
+	console.log(made.bounds);
 
 	return made;
 }
@@ -405,9 +452,10 @@ function draw() {
 
 	if (board) {
 		board.offset = {
-			x:Math.floor((ctx.width - (board.size.x - 1 + 0.5)*HEX_WIDTH)/2),
-			y:Math.floor((ctx.height - (board.size.y - 1)*HEX_HEIGHT)/2)
+			x:Math.floor((ctx.width - (board.bounds.max.x + 1 - board.bounds.min.x))/2-board.bounds.min.x),
+			y:Math.floor((ctx.height - (board.bounds.max.y + 1 - board.bounds.min.y))/2-board.bounds.min.y)
 		};
+		if (DEBUG_draw) console.log(`Offset of ${board.offset.x},${board.offset.y} in ctx of size ${ctx.width}x${ctx.height} for board of size ${board.bounds.max.x+1-board.bounds.min.x}x${board.bounds.max.y+1-board.bounds.min.y}`);
 	}
 	setMouseHex();
 
@@ -507,14 +555,34 @@ function draw() {
 			}
 		}
 
+		//shines:
+		for (let row = 0; row < board.size.y; ++row) {
+			for (let col = 0; col < board.size.x; ++col) {
+				if (board.ground[row][col] !== SPRITES.HEXES.exit) continue;
+				for (let dir = 0; dir < 6; ++dir) {
+					const n = stepDir({x:col, y:row}, dir);
+					if (n.x >= 0 && n.x < board.size.x && n.y >= 0 && n.y < board.size.y) {
+						if (board.ground[n.y][n.x] !== null && board.ground[n.y][n.x] !== SPRITES.HEXES.exit) {
+							let {x,y} = pixelPos(n.x, n.y);
+							//draw shine!
+							if      (dir == 0) drawSpriteD(SPRITES.shine, x,y,-1,0, 0,1);
+							else if (dir == 1) drawSpriteD(SPRITES.shineDiag, x,y,-1,0, 0,-1);
+							else if (dir == 2) drawSpriteD(SPRITES.shineDiag, x,y, 1,0, 0,-1);
+							else if (dir == 3) drawSpriteD(SPRITES.shine, x,y, 1,0, 0,1);
+							else if (dir == 4) drawSpriteD(SPRITES.shineDiag, x,y, 1,0, 0,1);
+							else if (dir == 5) drawSpriteD(SPRITES.shineDiag, x,y,-1,0, 0,1);
+						}
+					}
+				}
+			}
+		}
+
 		//helpful outlines:
 		for (let y = 0; y < board.size.y; ++y) {
 			for (let x = 0; x < board.size.x; ++x) {
-				drawSprite(
-					board.offset.x + (x + (y % 2 == 0 ? 0 : 0.5)) * HEX_WIDTH,
-					board.offset.y + y * HEX_HEIGHT,
-					SPRITES.HEXES.outlineUL
-				);
+				let {x:px,y:py} = pixelPos(x, y);
+
+				drawSprite(px,py, SPRITES.HEXES.outlineUL);
 			}
 		}
 
@@ -664,6 +732,19 @@ function draw() {
 		}
 	}
 
+	/*//DEBUG: draw bounds:
+	if (board) {
+		ctx.setTransform(1,0, 0,-1, 0,canvas.height);
+		ctx.fillStyle = '#f33';
+		ctx.fillRect(
+			board.offset.x+board.bounds.min.x,
+			board.offset.y+board.bounds.min.y,
+			(board.bounds.max.x+1 - board.bounds.min.x),
+			(board.bounds.max.y+1 - board.bounds.min.y)
+		);
+	}*/
+
+
 	//draw mouse:
 	if (mouse.grab) {
 		const at = pixelPos(mouse.grab.grabbed.x, mouse.grab.grabbed.y);
@@ -700,6 +781,8 @@ function update(elapsed) {
 
 function stepBoard(board) {
 	for (let sable of board.sables) {
+		if (sable.remain === 0) continue;
+
 		if (sable.step) {
 			for (let i = sable.tail.length-1; i >= 0; --i) {
 				if (i == 0) {
